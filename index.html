@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebGL2 Particle Playground</title>
+    <meta charset="utf-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; color: #fff; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #controls {
+            position: fixed; top: 16px; right: 16px; width: 280px;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+            padding: 20px; z-index: 10; user-select: none;
+        }
+        #controls h2 { font-size: 14px; margin-bottom: 16px; opacity: 0.6; letter-spacing: 2px; text-transform: uppercase; }
+        .ctrl-group { margin-bottom: 14px; }
+        .ctrl-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: rgba(255,255,255,0.8); }
+        .ctrl-group label span { color: rgba(255,255,255,0.5); }
+        input[type="range"] {
+            width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+            background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px;
+            background: #fff; border-radius: 50%; cursor: pointer;
+        }
+        #fps { position: fixed; top: 16px; left: 16px; font-size: 12px; opacity: 0.4; z-index: 10; }
+        #toggle-btn {
+            position: fixed; top: 16px; right: 304px; background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;
+            padding: 6px 12px; font-size: 12px; cursor: pointer; z-index: 10;
+        }
+        #toggle-btn:hover { background: rgba(255,255,255,0.2); }
+        #export-btn {
+            width: 100%; margin-top: 16px; padding: 10px; border-radius: 8px;
+            background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+            color: #fff; font-size: 12px; cursor: pointer; letter-spacing: 1px;
+            text-transform: uppercase; transition: background 0.2s;
+        }
+        #export-btn:hover { background: rgba(255,255,255,0.25); }
+        #export-btn.copied { background: rgba(80,200,120,0.3); border-color: rgba(80,200,120,0.5); }
+        .info-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: rgba(255,255,255,0.12); font-size: 9px; font-style: italic;
+            font-family: Georgia, serif; cursor: help; position: relative;
+            flex-shrink: 0; margin-left: 6px; transition: background 0.2s;
+        }
+        .info-icon:hover { background: rgba(255,255,255,0.3); }
+        .info-icon .tooltip {
+            display: none; position: absolute; bottom: 22px; right: -8px;
+            background: #1a1a1a; border: 1px solid #fff;
+            border-radius: 6px; padding: 8px 10px; font-size: 11px; font-style: normal;
+            font-family: 'Segoe UI', sans-serif; color: #fff; opacity: 1;
+            width: 200px; line-height: 1.4; z-index: 1000; pointer-events: none;
+            white-space: normal;
+        }
+        .info-icon:hover .tooltip { display: block; }
+    </style>
+</head>
+<body>
+<div id="fps">-- FPS</div>
+<button id="toggle-btn" onclick="document.getElementById('controls').classList.toggle('hidden');this.textContent=document.getElementById('controls').classList.contains('hidden')?'Show':'Hide'">Hide</button>
+<div id="controls">
+    <h2>Particle Controls</h2>
+    <div class="ctrl-group">
+        <label>Chromatic Aberration <span id="v-chroma">0.40</span><span class="info-icon">i<span class="tooltip">Splits RGB channels at the edges for a prismatic lens effect</span></span></label>
+        <input type="range" id="chromaStrength" min="0" max="2" step="0.01" value="0.4">
+    </div>
+    <div class="ctrl-group">
+        <label>Bloom Intensity <span id="v-bloom">0.60</span><span class="info-icon">i<span class="tooltip">Adds a soft glow around bright particles</span></span></label>
+        <input type="range" id="bloomIntensity" min="0" max="2" step="0.01" value="0.6">
+    </div>
+    <div class="ctrl-group">
+        <label>Particle Count <span id="v-count">200000</span><span class="info-icon">i<span class="tooltip">Total number of particles. Higher = denser but may affect performance</span></span></label>
+        <input type="range" id="particleCount" min="10000" max="500000" step="10000" value="200000">
+    </div>
+    <div class="ctrl-group">
+        <label>Point Size <span id="v-size">2.0</span><span class="info-icon">i<span class="tooltip">Size of each particle dot in pixels</span></span></label>
+        <input type="range" id="pointSize" min="0.5" max="6" step="0.1" value="2.0">
+    </div>
+    <div class="ctrl-group">
+        <label>Gravity Strength <span id="v-gravity">0.30</span><span class="info-icon">i<span class="tooltip">How strongly the orbiting gravity wells pull on particles. Set to 0 to disable</span></span></label>
+        <input type="range" id="gravityStrength" min="0" max="5" step="0.1" value="0.3">
+    </div>
+    <div class="ctrl-group">
+        <label>Damping <span id="v-damping">0.9500</span><span class="info-icon">i<span class="tooltip">How quickly particles slow down. Lower = more friction, higher = floatier movement</span></span></label>
+        <input type="range" id="damping" min="0.9" max="1" step="0.001" value="0.95">
+    </div>
+    <div class="ctrl-group">
+        <label>Trail <span id="v-trail">0.15</span><span class="info-icon">i<span class="tooltip">Motion trail intensity. 0 = long ghostly trails, 1 = no trail</span></span></label>
+        <input type="range" id="trailAmount" min="0" max="1" step="0.01" value="0.15">
+    </div>
+    <div class="ctrl-group">
+        <label>Color Mode <span id="v-colormode">Rainbow</span><span class="info-icon">i<span class="tooltip">Color palette: Rainbow, Fire, Ice, or Mono</span></span></label>
+        <input type="range" id="colorMode" min="0" max="3" step="1" value="0">
+    </div>
+    <div class="ctrl-group">
+        <label>Return Force <span id="v-home">0.0030</span><span class="info-icon">i<span class="tooltip">Spring force pulling particles back to their spawn position. Higher = tighter formation</span></span></label>
+        <input type="range" id="homeForce" min="0" max="0.02" step="0.0001" value="0.003">
+    </div>
+    <div class="ctrl-group">
+        <label>Wave / Wiggle <span id="v-wave">0.30</span><span class="info-icon">i<span class="tooltip">Sinusoidal wave flowing through the particle mesh. 0 = still, higher = more organic movement</span></span></label>
+        <input type="range" id="waveAmount" min="0" max="2" step="0.01" value="0.3">
+    </div>
+    <h2 style="margin-top:12px">Cursor</h2>
+    <div class="ctrl-group">
+        <label>Cursor Radius <span id="v-cradius">0.15</span><span class="info-icon">i<span class="tooltip">Size of the area around your cursor that affects particles</span></span></label>
+        <input type="range" id="cursorRadius" min="0.05" max="0.5" step="0.01" value="0.15">
+    </div>
+    <div class="ctrl-group">
+        <label>Cursor Push <span id="v-cforce">0.003</span><span class="info-icon">i<span class="tooltip">Repels particles away from your cursor within the radius</span></span></label>
+        <input type="range" id="cursorForce" min="0" max="0.005" step="0.0001" value="0.003">
+    </div>
+    <div class="ctrl-group">
+        <label>Cursor Pull <span id="v-cpull">0.000</span><span class="info-icon">i<span class="tooltip">Attracts particles toward your cursor within the radius</span></span></label>
+        <input type="range" id="cursorPull" min="0" max="0.005" step="0.0001" value="0">
+    </div>
+    <button id="export-btn">Copy Embed HTML</button>
+</div>
+<canvas id="gl-canvas"></canvas>
+
+<!-- ========== PARTICLE VERTEX SHADER (transform feedback) ========== -->
+<script id="particle-vs" type="x-shader/vs">#version 300 es
+layout(std140) uniform;
+
+layout(location=0) in vec3 aPosition;
+layout(location=1) in vec3 aVelocity;
+layout(location=2) in vec3 aColor;
+layout(location=3) in vec3 aHomePosition;
+
+uniform Mass {
+    float mass1Factor;
+    float mass2Factor;
+    float mass3Factor;
+    float pad0;
+    vec4 mass1Position;
+    vec4 mass2Position;
+    vec4 mass3Position;
+};
+
+uniform float uPointSize;
+uniform float uDamping;
+uniform float uGravityStrength;
+uniform vec3 uCursorPos;      // xy = clip-space cursor, z = radius
+uniform float uCursorForce;   // repulsion strength
+uniform float uCursorPull;    // attraction strength
+uniform float uHomeForce;     // spring back toward spawn
+uniform float uWaveAmount;    // sinusoidal wave displacement
+uniform float uTime;          // time for wave animation
+
+out vec3 vPosition;
+out vec3 vVelocity;
+out vec3 vColor;
+
+void main() {
+    vec3 position = aPosition;
+    vec3 velocity = aVelocity;
+
+    vec3 massVec = mass1Position.xyz - position;
+    float massDist2 = max(0.01, dot(massVec, massVec));
+    vec3 acceleration = mass1Factor * uGravityStrength * normalize(massVec) / massDist2;
+
+    massVec = mass2Position.xyz - position;
+    massDist2 = max(0.01, dot(massVec, massVec));
+    acceleration += mass2Factor * uGravityStrength * normalize(massVec) / massDist2;
+
+    massVec = mass3Position.xyz - position;
+    massDist2 = max(0.01, dot(massVec, massVec));
+    acceleration += mass3Factor * uGravityStrength * normalize(massVec) / massDist2;
+
+    // Cursor disturbance - push and/or pull within radius
+    if (uCursorPos.z > 0.0) {
+        vec2 away = position.xy - uCursorPos.xy;
+        float cursorDist = length(away);
+        float radius = uCursorPos.z;
+        if (cursorDist < radius && cursorDist > 0.001) {
+            float falloff = 1.0 - cursorDist / radius;
+            falloff = falloff * falloff * falloff;
+            vec2 dir = normalize(away);
+            // Push away
+            acceleration.xy += dir * uCursorForce * falloff;
+            // Pull toward
+            acceleration.xy -= dir * uCursorPull * falloff;
+        }
+    }
+
+    // Strong spring back toward home - keeps particles tethered
+    vec3 toHome = aHomePosition - position;
+    float homeDist = length(toHome);
+    acceleration += toHome * uHomeForce;
+    // Extra pull when far from home so they never escape
+    if (homeDist > 0.3) {
+        acceleration += toHome * uHomeForce * 3.0;
+    }
+
+    // Sinusoidal wave across the mesh
+    if (uWaveAmount > 0.0) {
+        float waveX = sin(aHomePosition.y * 6.0 + uTime * 1.5) * uWaveAmount;
+        float waveY = cos(aHomePosition.x * 5.0 + uTime * 1.2) * uWaveAmount;
+        float waveZ = sin((aHomePosition.x + aHomePosition.y) * 4.0 + uTime * 0.9) * uWaveAmount * 0.5;
+        acceleration += vec3(waveX, waveY, waveZ) * 0.0005;
+    }
+
+    velocity += acceleration;
+    velocity *= uDamping;
+
+    vPosition = position + velocity;
+    vVelocity = velocity;
+    vColor = aColor;
+
+    gl_PointSize = uPointSize;
+    gl_Position = vec4(position, 1.0);
+}
+</script>
+
+<!-- ========== PARTICLE FRAGMENT SHADER ========== -->
+<script id="particle-fs" type="x-shader/fs">#version 300 es
+precision highp float;
+
+in vec3 vColor;
+out vec4 fragColor;
+
+void main() {
+    // Soft circle point
+    vec2 pc = gl_PointCoord * 2.0 - 1.0;
+    float d = dot(pc, pc);
+    if (d > 1.0) discard;
+    float alpha = 0.7 * (1.0 - d * 0.5);
+    fragColor = vec4(vColor * alpha, alpha);
+}
+</script>
+
+<!-- ========== FADE QUAD FRAGMENT SHADER (for trails) ========== -->
+<script id="fade-fs" type="x-shader/fs">#version 300 es
+precision highp float;
+uniform float uFadeAlpha;
+out vec4 fragColor;
+void main() {
+    fragColor = vec4(0.0, 0.0, 0.0, uFadeAlpha);
+}
+</script>
+
+<!-- ========== FULLSCREEN QUAD VERTEX SHADER ========== -->
+<script id="post-vs" type="x-shader/vs">#version 300 es
+layout(location=0) in vec2 aPosition;
+out vec2 vUV;
+void main() {
+    vUV = aPosition * 0.5 + 0.5;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+</script>
+
+<!-- ========== CHROMATIC ABERRATION + BLOOM FRAGMENT SHADER ========== -->
+<script id="post-fs" type="x-shader/fs">#version 300 es
+precision highp float;
+
+in vec2 vUV;
+uniform sampler2D uScene;
+uniform float uChromaStrength;
+uniform float uBloomIntensity;
+uniform vec2 uResolution;
+
+out vec4 fragColor;
+
+void main() {
+    vec2 uv = vUV;
+    vec2 center = vec2(0.5);
+    vec2 dir = uv - center;
+    float dist = length(dir);
+
+    // Chromatic aberration - offset R, G, B channels
+    float offset = uChromaStrength * 0.008 * dist;
+    vec2 rUV = uv + dir * offset;
+    vec2 gUV = uv;
+    vec2 bUV = uv - dir * offset;
+
+    float r = texture(uScene, rUV).r;
+    float g = texture(uScene, gUV).g;
+    float b = texture(uScene, bUV).b;
+
+    vec3 color = vec3(r, g, b);
+
+    // Simple bloom: sample nearby and add glow
+    if (uBloomIntensity > 0.0) {
+        vec3 bloom = vec3(0.0);
+        float tw = 0.0;
+        vec2 texel = 1.0 / uResolution;
+        for (int x = -3; x <= 3; x++) {
+            for (int y = -3; y <= 3; y++) {
+                float w = 1.0 / (1.0 + float(x*x + y*y));
+                vec2 sUV = uv + vec2(float(x), float(y)) * texel * 3.0;
+                bloom += texture(uScene, sUV).rgb * w;
+                tw += w;
+            }
+        }
+        bloom /= tw;
+        color += bloom * uBloomIntensity;
+    }
+
+    // Subtle vignette
+    float vignette = 1.0 - dist * 0.8;
+    color *= vignette;
+
+    fragColor = vec4(color, 1.0);
+}
+</script>
+
+<script>
+"use strict";
+
+const canvas = document.getElementById("gl-canvas");
+const gl = canvas.getContext("webgl2", { antialias: false });
+if (!gl) {
+    document.body.innerHTML = '<div style="color:#fff;padding:40px;font-size:24px">WebGL 2 is not available in this browser.</div>';
+    throw new Error("WebGL 2 not available");
+}
+
+// --- Params ---
+const params = {
+    chromaStrength: 0.4,
+    bloomIntensity: 0.6,
+    particleCount: 200000,
+    pointSize: 2.0,
+    gravityStrength: 0.3,
+    damping: 0.95,
+    trailAmount: 0.15,
+    colorMode: 0,
+    cursorForce: 0.003,
+    cursorPull: 0,
+    cursorRadius: 0.15,
+    homeForce: 0.003,
+    waveAmount: 0.3,
+};
+const colorModeNames = ["Rainbow", "Fire", "Ice", "Mono"];
+
+// --- Bind UI ---
+function bindSlider(id, param, valId, format) {
+    const el = document.getElementById(id);
+    const vEl = document.getElementById(valId);
+    el.addEventListener("input", () => {
+        params[param] = parseFloat(el.value);
+        vEl.textContent = format ? format(params[param]) : params[param].toFixed(2);
+        if (param === "particleCount") { needsRebuild = true; vEl.textContent = params[param]; }
+        if (param === "colorMode") { needsRebuild = true; vEl.textContent = colorModeNames[params[param]]; }
+    });
+}
+bindSlider("chromaStrength", "chromaStrength", "v-chroma");
+bindSlider("bloomIntensity", "bloomIntensity", "v-bloom");
+bindSlider("particleCount", "particleCount", "v-count");
+bindSlider("pointSize", "pointSize", "v-size");
+bindSlider("gravityStrength", "gravityStrength", "v-gravity");
+bindSlider("damping", "damping", "v-damping", v => v.toFixed(4));
+bindSlider("trailAmount", "trailAmount", "v-trail");
+bindSlider("colorMode", "colorMode", "v-colormode", v => colorModeNames[v]);
+bindSlider("homeForce", "homeForce", "v-home", v => v.toFixed(4));
+bindSlider("waveAmount", "waveAmount", "v-wave");
+bindSlider("cursorRadius", "cursorRadius", "v-cradius", v => v.toFixed(2));
+bindSlider("cursorForce", "cursorForce", "v-cforce", v => v.toFixed(3));
+bindSlider("cursorPull", "cursorPull", "v-cpull", v => v.toFixed(3));
+
+// --- Resize ---
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    createFBO();
+}
+window.addEventListener("resize", resize);
+
+// --- Shader helpers ---
+function compileShader(type, source) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(s));
+        return null;
+    }
+    return s;
+}
+
+function createProgram(vsId, fsId, tfVaryings) {
+    const vs = compileShader(gl.VERTEX_SHADER, document.getElementById(vsId).text.trim());
+    const fs = compileShader(gl.FRAGMENT_SHADER, document.getElementById(fsId).text.trim());
+    const p = gl.createProgram();
+    gl.attachShader(p, vs);
+    gl.attachShader(p, fs);
+    if (tfVaryings) {
+        gl.transformFeedbackVaryings(p, tfVaryings, gl.SEPARATE_ATTRIBS);
+    }
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        console.error(gl.getProgramInfoLog(p));
+        return null;
+    }
+    return p;
+}
+
+// --- Create programs ---
+const particleProgram = createProgram("particle-vs", "particle-fs", ["vPosition", "vVelocity"]);
+const postProgram = createProgram("post-vs", "post-fs");
+const fadeProgram = createProgram("post-vs", "fade-fs");
+const uFadeAlpha = gl.getUniformLocation(fadeProgram, "uFadeAlpha");
+
+// Particle uniforms
+const uPointSize = gl.getUniformLocation(particleProgram, "uPointSize");
+const uDamping = gl.getUniformLocation(particleProgram, "uDamping");
+const uGravityStrength = gl.getUniformLocation(particleProgram, "uGravityStrength");
+const uCursorPos = gl.getUniformLocation(particleProgram, "uCursorPos");
+const uCursorForce = gl.getUniformLocation(particleProgram, "uCursorForce");
+const uCursorPull = gl.getUniformLocation(particleProgram, "uCursorPull");
+const uHomeForce = gl.getUniformLocation(particleProgram, "uHomeForce");
+const uWaveAmount = gl.getUniformLocation(particleProgram, "uWaveAmount");
+const uTime = gl.getUniformLocation(particleProgram, "uTime");
+const massBlockIdx = gl.getUniformBlockIndex(particleProgram, "Mass");
+gl.uniformBlockBinding(particleProgram, massBlockIdx, 0);
+
+// Post uniforms
+const uScene = gl.getUniformLocation(postProgram, "uScene");
+const uChromaStrength = gl.getUniformLocation(postProgram, "uChromaStrength");
+const uBloomIntensity = gl.getUniformLocation(postProgram, "uBloomIntensity");
+const uResolution = gl.getUniformLocation(postProgram, "uResolution");
+
+// --- Enable float rendering ---
+gl.getExtension("EXT_color_buffer_float");
+
+// --- FBO for off-screen render ---
+let fbo, fboTexture;
+function createFBO() {
+    if (fbo) { gl.deleteFramebuffer(fbo); gl.deleteTexture(fboTexture); }
+    fboTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, fboTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, canvas.width, canvas.height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fboTexture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+// --- Fullscreen quad ---
+const quadVAO = gl.createVertexArray();
+gl.bindVertexArray(quadVAO);
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(0);
+gl.bindVertexArray(null);
+
+// --- Generate particles ---
+function generateColorData(count, mode) {
+    const data = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+        const idx = i * 3;
+        switch (mode) {
+            case 0: // Rainbow
+                data[idx]     = Math.random();
+                data[idx + 1] = Math.random();
+                data[idx + 2] = Math.random();
+                break;
+            case 1: // Fire
+                data[idx]     = 0.8 + Math.random() * 0.2;
+                data[idx + 1] = Math.random() * 0.5;
+                data[idx + 2] = Math.random() * 0.1;
+                break;
+            case 2: // Ice
+                data[idx]     = 0.3 + Math.random() * 0.3;
+                data[idx + 1] = 0.5 + Math.random() * 0.5;
+                data[idx + 2] = 0.8 + Math.random() * 0.2;
+                break;
+            case 3: // Mono
+                const v = 0.6 + Math.random() * 0.4;
+                data[idx] = v; data[idx+1] = v; data[idx+2] = v;
+                break;
+        }
+    }
+    return data;
+}
+
+let vertexArrayA, vertexArrayB, transformFeedbackA, transformFeedbackB;
+let positionBufferA, positionBufferB, velocityBufferA, velocityBufferB, colorBuffer, homeBuffer;
+let currentVertexArray, currentTransformFeedback;
+let needsRebuild = false;
+
+function buildParticles() {
+    // Cleanup old
+    [vertexArrayA, vertexArrayB].forEach(v => v && gl.deleteVertexArray(v));
+    [transformFeedbackA, transformFeedbackB].forEach(t => t && gl.deleteTransformFeedback(t));
+    [positionBufferA, positionBufferB, velocityBufferA, velocityBufferB, colorBuffer, homeBuffer].forEach(b => b && gl.deleteBuffer(b));
+
+    const N = params.particleCount;
+    const posData = new Float32Array(N * 3);
+    const velData = new Float32Array(N * 3);
+    const colData = generateColorData(N, params.colorMode);
+
+    for (let i = 0; i < N; i++) {
+        const i3 = i * 3;
+        posData[i3]     = Math.random() * 2 - 1;
+        posData[i3 + 1] = Math.random() * 2 - 1;
+        posData[i3 + 2] = Math.random() * 2 - 1;
+    }
+
+    // --- Buffer set A ---
+    vertexArrayA = gl.createVertexArray();
+    gl.bindVertexArray(vertexArrayA);
+
+    positionBufferA = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBufferA);
+    gl.bufferData(gl.ARRAY_BUFFER, posData, gl.STREAM_COPY);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(0);
+
+    velocityBufferA = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBufferA);
+    gl.bufferData(gl.ARRAY_BUFFER, velData, gl.STREAM_COPY);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(1);
+
+    colorBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, colData, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(2);
+
+    homeBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, homeBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, posData, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(3);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    transformFeedbackA = gl.createTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedbackA);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, positionBufferA);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, velocityBufferA);
+
+    // --- Buffer set B ---
+    vertexArrayB = gl.createVertexArray();
+    gl.bindVertexArray(vertexArrayB);
+
+    positionBufferB = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBufferB);
+    gl.bufferData(gl.ARRAY_BUFFER, posData, gl.STREAM_COPY);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(0);
+
+    velocityBufferB = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBufferB);
+    gl.bufferData(gl.ARRAY_BUFFER, velData, gl.STREAM_COPY);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(1);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(2);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, homeBuffer);
+    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(3);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    transformFeedbackB = gl.createTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedbackB);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, positionBufferB);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, velocityBufferB);
+
+    gl.bindVertexArray(null);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+
+    currentVertexArray = vertexArrayA;
+    currentTransformFeedback = transformFeedbackB;
+}
+
+// --- Mass uniform buffer ---
+// std140 layout: 3 floats + 1 pad (16 bytes), then 3 x vec4 (48 bytes) = 64 bytes = 16 floats
+const massData = new Float32Array(16);
+// Mass orbit parameters - randomized once, then masses orbit over time
+const massOrbit = [
+    { factor: Math.random() / 30000, cx: Math.random() * 2 - 1, cy: Math.random() * 2 - 1, rx: 0.3 + Math.random() * 0.5, ry: 0.3 + Math.random() * 0.5, speed: 0.0003 + Math.random() * 0.0005, phase: Math.random() * Math.PI * 2 },
+    { factor: Math.random() / 30000, cx: Math.random() * 2 - 1, cy: Math.random() * 2 - 1, rx: 0.3 + Math.random() * 0.5, ry: 0.3 + Math.random() * 0.5, speed: 0.0003 + Math.random() * 0.0005, phase: Math.random() * Math.PI * 2 },
+    { factor: Math.random() / 30000, cx: Math.random() * 2 - 1, cy: Math.random() * 2 - 1, rx: 0.3 + Math.random() * 0.5, ry: 0.3 + Math.random() * 0.5, speed: 0.0003 + Math.random() * 0.0005, phase: Math.random() * Math.PI * 2 },
+];
+function randomizeMasses() {
+    for (let i = 0; i < 3; i++) {
+        const m = massOrbit[i];
+        m.factor = Math.random() / 30000;
+        m.cx = Math.random() * 2 - 1;
+        m.cy = Math.random() * 2 - 1;
+        m.rx = 0.3 + Math.random() * 0.5;
+        m.ry = 0.3 + Math.random() * 0.5;
+        m.speed = 0.0003 + Math.random() * 0.0005;
+        m.phase = Math.random() * Math.PI * 2;
+    }
+}
+function updateMasses(time) {
+    for (let i = 0; i < 3; i++) {
+        const m = massOrbit[i];
+        massData[i] = m.factor;
+        const angle = time * m.speed + m.phase;
+        massData.set([
+            m.cx + Math.cos(angle) * m.rx,
+            m.cy + Math.sin(angle) * m.ry,
+            Math.sin(angle * 0.7) * 0.3,
+            0
+        ], 4 + i * 4);
+    }
+}
+
+updateMasses(0);
+const massUBO = gl.createBuffer();
+gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, massUBO);
+gl.bufferData(gl.UNIFORM_BUFFER, massData, gl.DYNAMIC_DRAW);
+
+// --- Mouse interaction ---
+let mouseX = 0, mouseY = 0, mouseActive = false;
+canvas.addEventListener("mousemove", (e) => {
+    mouseX = (e.clientX / canvas.width) * 2 - 1;
+    mouseY = -((e.clientY / canvas.height) * 2 - 1);
+    mouseActive = true;
+});
+canvas.addEventListener("mouseleave", () => { mouseActive = false; });
+canvas.addEventListener("click", (e) => {
+    randomizeMasses();
+    massData.set([mouseX, mouseY, 0, 0], 4);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, massUBO);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, massData);
+});
+
+// --- Init ---
+resize();
+buildParticles();
+
+// --- FPS counter ---
+let frameCount = 0, lastFPSTime = performance.now();
+const fpsEl = document.getElementById("fps");
+
+// --- Render loop ---
+function draw() {
+    if (needsRebuild) {
+        needsRebuild = false;
+        buildParticles();
+    }
+
+    // FPS
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFPSTime >= 1000) {
+        fpsEl.textContent = frameCount + " FPS";
+        frameCount = 0;
+        lastFPSTime = now;
+    }
+
+    // Animate mass positions along orbits
+    updateMasses(now);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, massUBO);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, massData);
+
+    const N = params.particleCount;
+
+    // --- Pass 1: Render particles to FBO ---
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+
+    if (params.trailAmount >= 1.0) {
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+    } else {
+        // Trail: draw a black quad with low opacity to fade previous frame
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.useProgram(fadeProgram);
+        gl.uniform1f(uFadeAlpha, params.trailAmount);
+        gl.bindVertexArray(quadVAO);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+    gl.useProgram(particleProgram);
+    gl.uniform1f(uPointSize, params.pointSize);
+    gl.uniform1f(uDamping, params.damping);
+    gl.uniform1f(uGravityStrength, params.gravityStrength);
+    gl.uniform3f(uCursorPos, mouseX, mouseY, mouseActive ? params.cursorRadius : 0.0);
+    gl.uniform1f(uCursorForce, params.cursorForce);
+    gl.uniform1f(uCursorPull, params.cursorPull);
+    gl.uniform1f(uHomeForce, params.homeForce);
+    gl.uniform1f(uWaveAmount, params.waveAmount);
+    gl.uniform1f(uTime, now * 0.001);
+
+    gl.bindVertexArray(currentVertexArray);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, currentTransformFeedback);
+
+    if (currentTransformFeedback === transformFeedbackA) {
+        gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, positionBufferA);
+        gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, velocityBufferA);
+    } else {
+        gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, positionBufferB);
+        gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, velocityBufferB);
+    }
+
+    gl.beginTransformFeedback(gl.POINTS);
+    gl.drawArrays(gl.POINTS, 0, N);
+    gl.endTransformFeedback();
+
+    // Swap
+    if (currentVertexArray === vertexArrayA) {
+        currentVertexArray = vertexArrayB;
+        currentTransformFeedback = transformFeedbackA;
+    } else {
+        currentVertexArray = vertexArrayA;
+        currentTransformFeedback = transformFeedbackB;
+    }
+
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+
+    // --- Pass 2: Post-process to screen ---
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.disable(gl.BLEND);
+
+    gl.useProgram(postProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, fboTexture);
+    gl.uniform1i(uScene, 0);
+    gl.uniform1f(uChromaStrength, params.chromaStrength);
+    gl.uniform1f(uBloomIntensity, params.bloomIntensity);
+    gl.uniform2f(uResolution, canvas.width, canvas.height);
+
+    gl.bindVertexArray(quadVAO);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+
+// --- Export embed ---
+document.getElementById("export-btn").addEventListener("click", () => {
+    // Grab all shader sources
+    const shaderIds = ["particle-vs", "particle-fs", "fade-fs", "post-vs", "post-fs"];
+    const shaderScripts = shaderIds.map(id => {
+        const el = document.getElementById(id);
+        return `<script id="${id}" type="${el.type}">${el.text}<\/script>`;
+    }).join("\n");
+
+    const cfg = JSON.stringify(params, null, 2);
+
+    const embed = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<canvas id="gl-canvas"></canvas>
+${shaderScripts}
+<script>
+"use strict";
+const canvas=document.getElementById("gl-canvas");
+const gl=canvas.getContext("webgl2",{antialias:false});
+if(!gl){document.body.innerHTML='<div style="color:#fff;padding:40px">WebGL 2 required</div>';throw new Error();}
+
+const params=${cfg};
+
+const colorModeNames=["Rainbow","Fire","Ice","Mono"];
+
+function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;gl.viewport(0,0,canvas.width,canvas.height);createFBO();}
+window.addEventListener("resize",resize);
+
+function compileShader(t,s){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(sh));return null;}return sh;}
+function createProgram(vs,fs,tf){const v=compileShader(gl.VERTEX_SHADER,document.getElementById(vs).text.trim());const f=compileShader(gl.FRAGMENT_SHADER,document.getElementById(fs).text.trim());const p=gl.createProgram();gl.attachShader(p,v);gl.attachShader(p,f);if(tf)gl.transformFeedbackVaryings(p,tf,gl.SEPARATE_ATTRIBS);gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(p));return null;}return p;}
+
+const particleProgram=createProgram("particle-vs","particle-fs",["vPosition","vVelocity"]);
+const postProgram=createProgram("post-vs","post-fs");
+const fadeProgram=createProgram("post-vs","fade-fs");
+const uFadeAlpha=gl.getUniformLocation(fadeProgram,"uFadeAlpha");
+const uPointSize=gl.getUniformLocation(particleProgram,"uPointSize");
+const uDamping=gl.getUniformLocation(particleProgram,"uDamping");
+const uGravityStrength=gl.getUniformLocation(particleProgram,"uGravityStrength");
+const uCursorPos=gl.getUniformLocation(particleProgram,"uCursorPos");
+const uCursorForce=gl.getUniformLocation(particleProgram,"uCursorForce");
+const uHomeForce=gl.getUniformLocation(particleProgram,"uHomeForce");
+const uWaveAmount=gl.getUniformLocation(particleProgram,"uWaveAmount");
+const uTime=gl.getUniformLocation(particleProgram,"uTime");
+const massBlockIdx=gl.getUniformBlockIndex(particleProgram,"Mass");
+gl.uniformBlockBinding(particleProgram,massBlockIdx,0);
+const uScene=gl.getUniformLocation(postProgram,"uScene");
+const uChromaStrength=gl.getUniformLocation(postProgram,"uChromaStrength");
+const uBloomIntensity=gl.getUniformLocation(postProgram,"uBloomIntensity");
+const uResolution=gl.getUniformLocation(postProgram,"uResolution");
+
+gl.getExtension("EXT_color_buffer_float");
+let fbo,fboTexture;
+function createFBO(){if(fbo){gl.deleteFramebuffer(fbo);gl.deleteTexture(fboTexture);}fboTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,fboTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,canvas.width,canvas.height,0,gl.RGBA,gl.HALF_FLOAT,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fboTexture,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
+
+const quadVAO=gl.createVertexArray();gl.bindVertexArray(quadVAO);const quadBuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(0);gl.bindVertexArray(null);
+
+function generateColorData(c,m){const d=new Float32Array(c*3);for(let i=0;i<c;i++){const x=i*3;switch(m){case 0:d[x]=Math.random();d[x+1]=Math.random();d[x+2]=Math.random();break;case 1:d[x]=.8+Math.random()*.2;d[x+1]=Math.random()*.5;d[x+2]=Math.random()*.1;break;case 2:d[x]=.3+Math.random()*.3;d[x+1]=.5+Math.random()*.5;d[x+2]=.8+Math.random()*.2;break;case 3:const v=.6+Math.random()*.4;d[x]=v;d[x+1]=v;d[x+2]=v;break;}}return d;}
+
+let vA,vB,tfA,tfB,pA,pB,veA,veB,cB,hB,curVA,curTF;
+function buildParticles(){[vA,vB].forEach(v=>v&&gl.deleteVertexArray(v));[tfA,tfB].forEach(t=>t&&gl.deleteTransformFeedback(t));[pA,pB,veA,veB,cB,hB].forEach(b=>b&&gl.deleteBuffer(b));const N=params.particleCount;const pos=new Float32Array(N*3);const vel=new Float32Array(N*3);const col=generateColorData(N,params.colorMode);for(let i=0;i<N;i++){const j=i*3;pos[j]=Math.random()*2-1;pos[j+1]=Math.random()*2-1;pos[j+2]=Math.random()*2-1;}
+vA=gl.createVertexArray();gl.bindVertexArray(vA);pA=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pA);gl.bufferData(gl.ARRAY_BUFFER,pos,gl.STREAM_COPY);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(0);veA=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,veA);gl.bufferData(gl.ARRAY_BUFFER,vel,gl.STREAM_COPY);gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(1);cB=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,cB);gl.bufferData(gl.ARRAY_BUFFER,col,gl.STATIC_DRAW);gl.vertexAttribPointer(2,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(2);hB=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,hB);gl.bufferData(gl.ARRAY_BUFFER,pos,gl.STATIC_DRAW);gl.vertexAttribPointer(3,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(3);gl.bindBuffer(gl.ARRAY_BUFFER,null);tfA=gl.createTransformFeedback();gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,tfA);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,pA);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,1,veA);
+vB=gl.createVertexArray();gl.bindVertexArray(vB);pB=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pB);gl.bufferData(gl.ARRAY_BUFFER,pos,gl.STREAM_COPY);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(0);veB=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,veB);gl.bufferData(gl.ARRAY_BUFFER,vel,gl.STREAM_COPY);gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(1);gl.bindBuffer(gl.ARRAY_BUFFER,cB);gl.vertexAttribPointer(2,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(2);gl.bindBuffer(gl.ARRAY_BUFFER,hB);gl.vertexAttribPointer(3,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(3);gl.bindBuffer(gl.ARRAY_BUFFER,null);tfB=gl.createTransformFeedback();gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,tfB);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,pB);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,1,veB);
+gl.bindVertexArray(null);gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,null);curVA=vA;curTF=tfB;}
+
+const massData=new Float32Array(16);
+const massOrbit=[{factor:Math.random()/30000,cx:Math.random()*2-1,cy:Math.random()*2-1,rx:.3+Math.random()*.5,ry:.3+Math.random()*.5,speed:.0003+Math.random()*.0005,phase:Math.random()*Math.PI*2},{factor:Math.random()/30000,cx:Math.random()*2-1,cy:Math.random()*2-1,rx:.3+Math.random()*.5,ry:.3+Math.random()*.5,speed:.0003+Math.random()*.0005,phase:Math.random()*Math.PI*2},{factor:Math.random()/30000,cx:Math.random()*2-1,cy:Math.random()*2-1,rx:.3+Math.random()*.5,ry:.3+Math.random()*.5,speed:.0003+Math.random()*.0005,phase:Math.random()*Math.PI*2}];
+function updateMasses(t){for(let i=0;i<3;i++){const m=massOrbit[i];massData[i]=m.factor;const a=t*m.speed+m.phase;massData.set([m.cx+Math.cos(a)*m.rx,m.cy+Math.sin(a)*m.ry,Math.sin(a*.7)*.3,0],4+i*4);}}
+updateMasses(0);
+const massUBO=gl.createBuffer();gl.bindBufferBase(gl.UNIFORM_BUFFER,0,massUBO);gl.bufferData(gl.UNIFORM_BUFFER,massData,gl.DYNAMIC_DRAW);
+
+let mouseX=0,mouseY=0,mouseActive=false;
+document.addEventListener("mousemove",e=>{mouseX=(e.clientX/canvas.width)*2-1;mouseY=-((e.clientY/canvas.height)*2-1);mouseActive=true;});
+document.addEventListener("mouseleave",()=>{mouseActive=false;});
+
+resize();buildParticles();
+
+function draw(){
+const now=performance.now();
+updateMasses(now);gl.bindBuffer(gl.UNIFORM_BUFFER,massUBO);gl.bufferSubData(gl.UNIFORM_BUFFER,0,massData);
+const N=params.particleCount;
+gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.viewport(0,0,canvas.width,canvas.height);
+if(params.trailAmount>=1){gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);}else{gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(fadeProgram);gl.uniform1f(uFadeAlpha,params.trailAmount);gl.bindVertexArray(quadVAO);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);}
+gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+gl.useProgram(particleProgram);gl.uniform1f(uPointSize,params.pointSize);gl.uniform1f(uDamping,params.damping);gl.uniform1f(uGravityStrength,params.gravityStrength);gl.uniform3f(uCursorPos,mouseX,mouseY,mouseActive?params.cursorRadius:0);gl.uniform1f(uCursorForce,params.cursorForce);gl.uniform1f(uHomeForce,params.homeForce);gl.uniform1f(uWaveAmount,params.waveAmount);gl.uniform1f(uTime,now*.001);
+gl.bindVertexArray(curVA);gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,curTF);
+if(curTF===tfA){gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,pA);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,1,veA);}else{gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,pB);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,1,veB);}
+gl.beginTransformFeedback(gl.POINTS);gl.drawArrays(gl.POINTS,0,N);gl.endTransformFeedback();
+if(curVA===vA){curVA=vB;curTF=tfA;}else{curVA=vA;curTF=tfB;}
+gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,null);
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,canvas.width,canvas.height);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.disable(gl.BLEND);
+gl.useProgram(postProgram);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fboTexture);gl.uniform1i(uScene,0);gl.uniform1f(uChromaStrength,params.chromaStrength);gl.uniform1f(uBloomIntensity,params.bloomIntensity);gl.uniform2f(uResolution,canvas.width,canvas.height);
+gl.bindVertexArray(quadVAO);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+requestAnimationFrame(draw);}
+requestAnimationFrame(draw);
+<\/script>
+</body>
+</html>`;
+
+    navigator.clipboard.writeText(embed).then(() => {
+        const btn = document.getElementById("export-btn");
+        btn.textContent = "Copied!";
+        btn.classList.add("copied");
+        setTimeout(() => { btn.textContent = "Copy Embed HTML"; btn.classList.remove("copied"); }, 2000);
+    });
+});
+</script>
+</body>
+</html>
